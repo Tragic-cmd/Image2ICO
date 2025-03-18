@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image to ICO Converter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .upload-area {
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      padding: 30px;
+      text-align: center;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+    .upload-area:hover {
+      border-color: #0078d7;
+    }
+    .upload-area.highlight {
+      border-color: #0078d7;
+      background-color: rgba(0,120,215,0.05);
+    }
+    .btn {
+      background-color: #0078d7;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+      transition: background-color 0.3s;
+    }
+    .btn:hover {
+      background-color: #005a9e;
+    }
+    .btn:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    #preview-container {
+      display: none;
+      margin-top: 20px;
+    }
+    #cropper-container {
+      margin: 20px 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    #image-preview {
+      max-width: 100%;
+      display: block;
+    }
+    .sizes-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .size-option {
+      background-color: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .size-option.selected {
+      background-color: #0078d7;
+      color: white;
+      border-color: #0078d7;
+    }
+    .steps {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      background-color: #eee;
+      position: relative;
+    }
+    .step.active {
+      background-color: #0078d7;
+      color: white;
+    }
+    .step:not(:last-child):after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 20px;
+      height: 2px;
+      background-color: #ccc;
+    }
+    #loading {
+      display: none;
+      text-align: center;
+      margin: 20px 0;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-radius: 50%;
+      border-top: 4px solid #0078d7;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Image to ICO Converter</h1>
+    
+    <div class="steps">
+      <div class="step active">1. Upload</div>
+      <div class="step">2. Crop</div>
+      <div class="step">3. Convert</div>
+      <div class="step">4. Download</div>
+    </div>
+
+    <div id="upload-step">
+      <div id="upload-area" class="upload-area">
+        <p>Drag & drop an image here or click to select</p>
+        <p><small>Supports JPG, PNG, GIF, BMP, WebP, and more</small></p>
+        <input type="file" id="file-input" accept="image/*" style="display: none;">
+      </div>
+    </div>
+
+    <div id="preview-container">
+      <div id="cropper-container">
+        <canvas id="image-preview"></canvas>
+      </div>
+      
+      <h3>Select Icon Size</h3>
+      <div class="sizes-container">
+        <div class="size-option selected" data-size="16">16×16</div>
+        <div class="size-option" data-size="32">32×32</div>
+        <div class="size-option" data-size="48">48×48</div>
+        <div class="size-option" data-size="64">64×64</div>
+        <div class="size-option" data-size="128">128×128</div>
+      </div>
+
+      <div id="buttons">
+        <button id="crop-btn" class="btn">Crop</button>
+        <button id="convert-btn" class="btn" disabled>Convert to ICO</button>
+        <button id="download-btn" class="btn" disabled>Download</button>
+        <button id="reset-btn" class="btn">Start Over</button>
+      </div>
+      
+      <div id="loading">
+        <div class="spinner"></div>
+        <p>Converting to ICO format...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const uploadArea = document.getElementById('upload-area');
+      const fileInput = document.getElementById('file-input');
+      const previewContainer = document.getElementById('preview-container');
+      const cropBtn = document.getElementById('crop-btn');
+      const convertBtn = document.getElementById('convert-btn');
+      const downloadBtn = document.getElementById('download-btn');
+      const resetBtn = document.getElementById('reset-btn');
+      const loading = document.getElementById('loading');
+      const steps = document.querySelectorAll('.step');
+      
+      let canvas;
+      let selectedSize = 16;
+      let icoBlob = null;
+      
+      // Initialize the fabric canvas for cropping
+      function initCropper() {
+        canvas = new fabric.Canvas('image-preview');
+        canvas.selection = false;
+      }
+      
+      // Handle file selection and drag & drop
+      uploadArea.addEventListener('click', () => fileInput.click());
+      
+      fileInput.addEventListener('change', handleFileSelect);
+      
+      uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('highlight');
+      });
+      
+      uploadArea.addEventListener('dragleave', function() {
+        uploadArea.classList.remove('highlight');
+      });
+      
+      uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('highlight');
+        
+        if (e.dataTransfer.files.length) {
+          fileInput.files = e.dataTransfer.files;
+          handleFileSelect(e);
+        }
+      });
+      
+      // Handle the file selection
+      function handleFileSelect(e) {
+        const file = e.target.files[0] || e.dataTransfer.files[0];
+        
+        if (!file) return;
+        
+        if (!file.type.match('image.*')) {
+          alert('Please select an image file.');
+          return;
+        }
+        
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          // Show the cropper step
+          document.getElementById('upload-step').style.display = 'none';
+          previewContainer.style.display = 'block';
+          
+          // Initialize the cropper if not already done
+          if (!canvas) {
+            initCropper();
+          } else {
+            canvas.clear();
+          }
+          
+          // Update step indicators
+          updateSteps(1);
+          
+          // Load the image into the canvas
+          fabric.Image.fromURL(e.target.result, function(img) {
+            // Resize image to fit the canvas
+            let maxDim = 400;
+            let scaleFactor = 1;
+            
+            if (img.width > maxDim || img.height > maxDim) {
+              scaleFactor = Math.min(maxDim / img.width, maxDim / img.height);
+              img.scale(scaleFactor);
+            }
+            
+            // Set canvas dimensions
+            canvas.setWidth(img.width * scaleFactor);
+            canvas.setHeight(img.height * scaleFactor);
+            
+            // Add image to canvas
+            canvas.add(img);
+            img.center();
+            canvas.renderAll();
+            
+            // Create crop rectangle
+            const cropSize = Math.min(canvas.width, canvas.height) * 0.8;
+            const cropRect = new fabric.Rect({
+              left: (canvas.width - cropSize) / 2,
+              top: (canvas.height - cropSize) / 2,
+              width: cropSize,
+              height: cropSize,
+              fill: 'transparent',
+              stroke: '#0078d7',
+              strokeWidth: 2,
+              strokeDashArray: [5, 5],
+              selectable: true,
+              hasRotatingPoint: false,
+              lockRotation: true,
+              lockScalingX: true,
+              lockScalingY: true
+            });
+            
+            canvas.add(cropRect);
+            canvas.setActiveObject(cropRect);
+            canvas.renderAll();
+          });
+        };
+        
+        reader.readAsDataURL(file);
+      }
+      
+      // Handle size selection
+      document.querySelectorAll('.size-option').forEach(option => {
+        option.addEventListener('click', function() {
+          document.querySelectorAll('.size-option').forEach(el => el.classList.remove('selected'));
+          this.classList.add('selected');
+          selectedSize = parseInt(this.getAttribute('data-size'));
+        });
+      });
+      
+      // Handle crop button click
+      cropBtn.addEventListener('click', function() {
+        const activeObject = canvas.getActiveObject();
+        
+        if (!activeObject || activeObject.type !== 'rect') {
+          alert('Please select a crop area first.');
+          return;
+        }
+        
+        // Get the crop rectangle
+        const rect = activeObject;
+        const img = canvas.getObjects().find(obj => obj.type === 'image');
+        
+        if (!img) return;
+        
+        // Update step indicators
+        updateSteps(2);
+        
+        // Create a new canvas for the cropped image
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = selectedSize;
+        cropCanvas.height = selectedSize;
+        const ctx = cropCanvas.getContext('2d');
+        
+        // Draw the cropped portion to the new canvas
+        const scaleX = img.scaleX || 1;
+        const scaleY = img.scaleY || 1;
+        
+        ctx.drawImage(
+          img._element,
+          (rect.left - img.left) / scaleX,
+          (rect.top - img.top) / scaleY,
+          rect.width / scaleX,
+          rect.height / scaleY,
+          0, 0, selectedSize, selectedSize
+        );
+        
+        // Replace the canvas content with the cropped image
+        canvas.clear();
+        fabric.Image.fromURL(cropCanvas.toDataURL(), function(croppedImg) {
+          canvas.setWidth(selectedSize);
+          canvas.setHeight(selectedSize);
+          canvas.add(croppedImg);
+          canvas.renderAll();
+          
+          // Enable convert button
+          convertBtn.disabled = false;
+        });
+      });
+      
+      // Handle convert button click
+      convertBtn.addEventListener('click', function() {
+        // Show loading indicator
+        loading.style.display = 'block';
+        convertBtn.disabled = true;
+        
+        // Update step indicators
+        updateSteps(3);
+        
+        // Get the canvas data
+        const imgData = canvas.toDataURL('image/png');
+        
+        // Convert to ICO format
+        convertToIco(imgData).then(blob => {
+          icoBlob = blob;
+          downloadBtn.disabled = false;
+          loading.style.display = 'none';
+          
+          // Update step indicators
+          updateSteps(4);
+        }).catch(error => {
+          alert('Error converting to ICO: ' + error.message);
+          loading.style.display = 'none';
+          convertBtn.disabled = false;
+        });
+      });
+      
+      // Handle download button click
+      downloadBtn.addEventListener('click', function() {
+        if (!icoBlob) return;
+        
+        const url = URL.createObjectURL(icoBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'icon.ico';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+      
+      // Handle reset button click
+      resetBtn.addEventListener('click', function() {
+        // Clear everything and go back to upload step
+        if (canvas) {
+          canvas.clear();
+        }
+        icoBlob = null;
+        fileInput.value = '';
+        previewContainer.style.display = 'none';
+        document.getElementById('upload-step').style.display = 'block';
+        convertBtn.disabled = true;
+        downloadBtn.disabled = true;
+        loading.style.display = 'none';
+        
+        // Reset selected size
+        document.querySelectorAll('.size-option').forEach(el => el.classList.remove('selected'));
+        document.querySelector('[data-size="16"]').classList.add('selected');
+        selectedSize = 16;
+        
+        // Reset step indicators
+        updateSteps(0);
+      });
+      
+      // Update steps UI
+      function updateSteps(activeIndex) {
+        steps.forEach((step, index) => {
+          if (index <= activeIndex) {
+            step.classList.add('active');
+          } else {
+            step.classList.remove('active');
+          }
+        });
+      }
+      
+      // Function to convert image to ICO format
+      async function convertToIco(dataUrl) {
+        // Convert data URL to array buffer
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const arrayBuffer = await blob.arrayBuffer();
+        
+        // Create ICO header
+        const icoHeader = new ArrayBuffer(22);
+        const view = new DataView(icoHeader);
+        
+        // Reserved (0)
+        view.setUint16(0, 0, true);
+        // Type (1 for ICO)
+        view.setUint16(2, 1, true);
+        // Number of images (1)
+        view.setUint16(4, 1, true);
+        
+        // Icon entry - Width
+        view.setUint8(6, selectedSize === 256 ? 0 : selectedSize);
+        // Icon entry - Height
+        view.setUint8(7, selectedSize === 256 ? 0 : selectedSize);
+        // Icon entry - Color palette (0 for no palette)
+        view.setUint8(8, 0);
+        // Icon entry - Reserved (0)
+        view.setUint8(9, 0);
+        // Icon entry - Color planes (1 for Windows ICO)
+        view.setUint16(10, 1, true);
+        // Icon entry - Bits per pixel (32 for RGBA)
+        view.setUint16(12, 32, true);
+        // Icon entry - Size of image data in bytes
+        view.setUint32(14, arrayBuffer.byteLength, true);
+        // Icon entry - Offset of image data from beginning of file
+        view.setUint32(18, 22, true);
+        
+        // Combine header and image data
+        const icoData = new Uint8Array(icoHeader.byteLength + arrayBuffer.byteLength);
+        icoData.set(new Uint8Array(icoHeader), 0);
+        icoData.set(new Uint8Array(arrayBuffer), icoHeader.byteLength);
+        
+        return new Blob([icoData], { type: 'image/x-icon' });
+      }
+    });
+  </script>
+</body>
+</html>
