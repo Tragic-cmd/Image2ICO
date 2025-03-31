@@ -1,6 +1,6 @@
 # Image to ICO Converter
 
-Describe your project.
+A simple web-based tool for converting images into ICO format. This tool allows users to upload an image, crop it, select an icon size, and generate a .ico file for use as a favicon or application icon.
 
 ## Table of Contents
 
